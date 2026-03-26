@@ -1,9 +1,11 @@
+"use client"
+
+import CameraView from "@/components/camera/CameraView"
+
 export default function Home() {
   return (
-    <main className="relative w-full h-screen bg-black flex items-center justify-center">
-      <p className="text-white font-mono text-sm opacity-50">
-        🪄 WandCast — camera loading...
-      </p>
+    <main className="w-full h-screen bg-black overflow-hidden">
+      <CameraView />
     </main>
   )
 }

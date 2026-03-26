@@ -1,31 +1,19 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { Hands, Results } from "@mediapipe/hands"
-import { Camera } from "@mediapipe/camera_utils"
+import { Hands } from "@mediapipe/hands"
+import type { Results } from "@mediapipe/hands"
+import CameraUtils from "@mediapipe/camera_utils"
 import {
   MEDIAPIPE_CONFIG,
   CAMERA_CONFIG,
   LANDMARKS,
 } from "@/lib/mediapipe/config"
-
-// This is the shape of data we expose to the rest of the app
-export interface WandPoint {
-  x: number // 0 to 1 (normalized)
-  y: number // 0 to 1 (normalized)
-  z: number // depth estimate
-}
-
-export interface HandTrackingResult {
-  isTracking: boolean // is a hand visible?
-  wandTip: WandPoint | null // index finger tip position
-  allLandmarks: WandPoint[] // all 21 points (for drawing skeleton)
-  handedness: "Left" | "Right" | null
-}
+import type { WandPoint, HandTrackingResult } from "@/types"
 
 export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement>) {
-  const handsRef = useRef<Hands | null>(null)
-  const cameraRef = useRef<Camera | null>(null)
+  const handsRef = useRef<InstanceType<typeof Hands> | null>(null)
+  const cameraRef = useRef<InstanceType<typeof CameraUtils.Camera> | null>(null)
 
   const [trackingResult, setTrackingResult] = useState<HandTrackingResult>({
     isTracking: false,
@@ -34,13 +22,14 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement>) {
     handedness: null,
   })
 
-  // This runs every frame — keep it fast!
+  // ─── FRAME CALLBACK ────────────────────────────────────────
+  // Runs 30x per second — must stay fast, no heavy logic here
   const onResults = useCallback((results: Results) => {
+    // No hand in frame
     if (
       !results.multiHandLandmarks ||
       results.multiHandLandmarks.length === 0
     ) {
-      // No hand detected
       setTrackingResult({
         isTracking: false,
         wandTip: null,
@@ -50,23 +39,39 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement>) {
       return
     }
 
-    // Take the first hand only (maxNumHands: 1)
+    // First hand only (maxNumHands: 1 in config)
     const landmarks = results.multiHandLandmarks[0]
-    const handedness = results.multiHandedness?.[0]?.label as "Left" | "Right"
+    const handedness =
+      (results.multiHandedness?.[0]?.label as "Left" | "Right") ?? null
+
+    // Landmark 8 = index finger tip = wand tip
     const tip = landmarks[LANDMARKS.WAND_TIP]
+
+    const wandTip: WandPoint = {
+      x: tip.x,
+      y: tip.y,
+      z: tip.z,
+    }
+
+    const allLandmarks: WandPoint[] = landmarks.map((lm) => ({
+      x: lm.x,
+      y: lm.y,
+      z: lm.z,
+    }))
 
     setTrackingResult({
       isTracking: true,
-      wandTip: { x: tip.x, y: tip.y, z: tip.z },
-      allLandmarks: landmarks.map((lm) => ({ x: lm.x, y: lm.y, z: lm.z })),
+      wandTip,
+      allLandmarks,
       handedness,
     })
-  }, [])
+  }, []) // no deps — pure function, never needs to recreate
 
+  // ─── MEDIAPIPE INIT ────────────────────────────────────────
   useEffect(() => {
     if (!videoRef.current) return
 
-    // Initialize MediaPipe Hands
+    // 1. Initialize Hands model
     const hands = new Hands({
       locateFile: (file) =>
         `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
@@ -76,11 +81,11 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement>) {
     hands.onResults(onResults)
     handsRef.current = hands
 
-    // Initialize Camera util — feeds video frames to MediaPipe
-    const camera = new Camera(videoRef.current, {
+    // 2. Initialize Camera — feeds video frames to MediaPipe
+    const camera = new CameraUtils.Camera(videoRef.current, {
       onFrame: async () => {
-        if (videoRef.current) {
-          await hands.send({ image: videoRef.current })
+        if (videoRef.current && handsRef.current) {
+          await handsRef.current.send({ image: videoRef.current })
         }
       },
       width: CAMERA_CONFIG.width,
@@ -90,8 +95,19 @@ export function useHandTracking(videoRef: React.RefObject<HTMLVideoElement>) {
     camera.start()
     cameraRef.current = camera
 
-    // Cleanup when component unmounts
+    // 3. Pause tracking when tab is hidden (saves battery)
+    const handleVisibility = () => {
+      if (document.hidden) {
+        camera.stop()
+      } else {
+        camera.start()
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+
+    // 4. Cleanup on unmount
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility)
       camera.stop()
       hands.close()
     }
