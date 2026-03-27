@@ -3,7 +3,7 @@ import type { SpellName } from "@/types"
 
 // Each template is 32 normalized points representing the ideal gesture path
 export const SPELL_TEMPLATES: Record<SpellName, NormalizedPoint[]> = {
-  lumos: generateAlphaLoop(32),
+  lumos: generateCircle("clockwise", 32),
 
   // Nox — straight downward sweep ↓
   nox: generateArc("top", 32),
