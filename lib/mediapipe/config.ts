@@ -5,14 +5,14 @@ const isMobile =
 
 export const MEDIAPIPE_CONFIG = {
   maxNumHands: 1,
-  modelComplexity: isMobile ? 0 : 1, // 0 = Lite (faster), 1 = Full (accurate)
-  minDetectionConfidence: 0.7,
+  modelComplexity: isMobile ? 0 : 1,
+  minDetectionConfidence: 0.6,
   minTrackingConfidence: 0.5,
 } as const
 
 export const CAMERA_CONFIG = {
-  width: 1280,
-  height: 720,
+  width: isMobile ? 480 : 1280,
+  height: isMobile ? 640 : 720,
 } as const
 
 // Named landmark indices — NEVER use raw numbers like landmarks[8]

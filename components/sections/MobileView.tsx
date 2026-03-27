@@ -84,7 +84,7 @@ export default function MobileView() {
       <section className="flex flex-col px-6 py-8 gap-4">
         <Link
           href="/camera"
-          className="w-full font-cinzel text-[0.75rem] font-bold tracking-[0.25em] text-bg-dark bg-gold-b py-[1.1rem] rounded-[2px] active:scale-[0.98] transition-transform"
+          className="w-full text-center font-cinzel text-[0.75rem] font-bold tracking-[0.25em] text-bg-dark bg-gold-b py-[1.1rem] rounded-[2px] active:scale-[0.98] transition-transform"
         >
           READY YOUR WAND
         </Link>

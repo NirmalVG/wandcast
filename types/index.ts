@@ -8,9 +8,10 @@ export interface WandPoint {
 }
 
 export interface HandTrackingResult {
+  isReady: boolean
   isTracking: boolean
   wandTip: WandPoint | null
-  allLandmarks: WandPoint[] // always an array, never undefined
+  allLandmarks: WandPoint[]
   handedness: "Left" | "Right" | null
 }
 

@@ -11,13 +11,17 @@ import {
 } from "@/lib/mediapipe/config"
 import type { WandPoint, HandTrackingResult } from "@/types"
 
+// ⚠️ Make sure your types.ts file has `isReady: boolean` added to HandTrackingResult!
 export function useHandTracking(
   videoRef: React.RefObject<HTMLVideoElement | null>,
 ) {
   const handsRef = useRef<InstanceType<typeof HandsUtils.Hands> | null>(null)
   const cameraRef = useRef<InstanceType<typeof CameraUtils.Camera> | null>(null)
 
-  const [trackingResult, setTrackingResult] = useState<HandTrackingResult>({
+  const [trackingResult, setTrackingResult] = useState<
+    HandTrackingResult & { isReady: boolean }
+  >({
+    isReady: false, // <-- This powers your loading screen
     isTracking: false,
     wandTip: null,
     allLandmarks: [],
@@ -25,36 +29,36 @@ export function useHandTracking(
   })
 
   // ─── FRAME CALLBACK ──────────────────────────────────────────────────────────
-  // Runs 30x per second — useCallback keeps reference stable, prevents re-registration
   const onResults = useCallback((results: Results) => {
-    // Guard 1 — results itself could be malformed
-    if (!results) return
-
-    // Guard 2 — no hand landmarks in this frame
+    // If we get empty results, the AI is running, just no hand is visible yet.
     if (
+      !results ||
       !results.multiHandLandmarks ||
       results.multiHandLandmarks.length === 0
     ) {
-      setTrackingResult({
+      setTrackingResult((prev) => ({
+        ...prev,
+        isReady: true, // Tell the UI to hide the loading spinner
         isTracking: false,
         wandTip: null,
         allLandmarks: [],
         handedness: null,
-      })
+      }))
       return
     }
 
     // First hand only (maxNumHands: 1)
     const landmarks = results.multiHandLandmarks[0]
 
-    // Guard 3 — landmarks array itself could be empty
     if (!landmarks || landmarks.length === 0) {
-      setTrackingResult({
+      setTrackingResult((prev) => ({
+        ...prev,
+        isReady: true,
         isTracking: false,
         wandTip: null,
         allLandmarks: [],
         handedness: null,
-      })
+      }))
       return
     }
 
@@ -64,7 +68,6 @@ export function useHandTracking(
     // Landmark 8 = index finger tip = wand tip 🪄
     const tip = landmarks[LANDMARKS.WAND_TIP]
 
-    // Guard 4 — wand tip landmark could be missing
     if (!tip) return
 
     const wandTip: WandPoint = {
@@ -80,16 +83,19 @@ export function useHandTracking(
     }))
 
     setTrackingResult({
+      isReady: true, // Model is hot and tracking a hand!
       isTracking: true,
       wandTip,
       allLandmarks,
       handedness,
     })
-  }, []) // empty deps — pure function, stable forever
+  }, [])
 
   // ─── MEDIAPIPE INIT ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!videoRef.current) return
+
+    let isMounted = true // Protects against React Strict Mode double-firing
 
     // 1. Initialize MediaPipe Hands model
     const hands = new HandsUtils.Hands({
@@ -101,19 +107,30 @@ export function useHandTracking(
     hands.onResults(onResults)
     handsRef.current = hands
 
-    // 2. Initialize Camera — feeds each video frame into MediaPipe
+    // 2. Initialize Camera
+    // Crucial Fix: Mobile cameras are portrait, Desktop webcams are landscape.
+    // If we don't flip this on mobile, the video gets squished and tracking fails.
+    const isMobile = window.innerWidth <= 768
+    const reqWidth = isMobile ? CAMERA_CONFIG.height : CAMERA_CONFIG.width
+    const reqHeight = isMobile ? CAMERA_CONFIG.width : CAMERA_CONFIG.height
+
     const camera = new CameraUtils.Camera(videoRef.current, {
       onFrame: async () => {
-        // Guard — component may unmount between frames
-        if (videoRef.current && handsRef.current) {
+        // Prevent silent crashes if component unmounted or video isn't ready
+        if (!isMounted || !videoRef.current || !handsRef.current) return
+        if (videoRef.current.videoWidth === 0) return
+
+        try {
           await handsRef.current.send({ image: videoRef.current })
+        } catch (error) {
+          console.warn("MediaPipe skipped a frame:", error)
         }
       },
-      width: CAMERA_CONFIG.width,
-      height: CAMERA_CONFIG.height,
+      width: reqWidth,
+      height: reqHeight,
     })
 
-    camera.start()
+    camera.start().catch((err) => console.error("Camera failed:", err))
     cameraRef.current = camera
 
     // 3. Pause when tab is hidden — saves mobile battery
@@ -121,16 +138,17 @@ export function useHandTracking(
       if (document.hidden) {
         camera.stop()
       } else {
-        camera.start()
+        camera.start().catch(console.error)
       }
     }
     document.addEventListener("visibilitychange", handleVisibility)
 
     // 4. Full cleanup on unmount
     return () => {
+      isMounted = false
       document.removeEventListener("visibilitychange", handleVisibility)
-      camera.stop()
-      hands.close()
+      if (cameraRef.current) cameraRef.current.stop()
+      if (handsRef.current) handsRef.current.close()
     }
   }, [videoRef, onResults])
 

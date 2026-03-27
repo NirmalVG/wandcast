@@ -104,9 +104,25 @@ export default function CameraView() {
         playsInline
         webkit-playsinline="true"
         muted
-        // Added -scale-x-100 here to mirror the video
         className="absolute inset-0 w-full h-full object-cover -scale-x-100"
       />
+
+      {/* ── WARM-UP LOADING SCREEN ── */}
+      {!trackingResult.isReady && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-bg-dark/95 backdrop-blur-sm transition-opacity duration-500">
+          <div className="relative w-16 h-16 flex items-center justify-center mb-6">
+            <div className="absolute inset-0 border-2 border-gold-dim border-t-gold-b rounded-full animate-spin" />
+            <div className="absolute inset-2 border border-gold-dim/50 border-b-gold-pale rounded-full animate-spin direction-reverse" />
+            <span className="font-cinzel text-xl text-gold-b">W</span>
+          </div>
+          <h2 className="font-cinzel text-lg tracking-widest text-ink mb-2">
+            Aligning Arcane Focus
+          </h2>
+          <p className="font-fira text-xs text-ink-dim tracking-widest animate-pulse">
+            CALIBRATING NEURAL MODEL...
+          </p>
+        </div>
+      )}
 
       {/* ── 2D CANVAS (Hand Skeleton & Trail) ── */}
       <div className="absolute inset-0 w-full h-full pointer-events-none -scale-x-100">
@@ -128,47 +144,22 @@ export default function CameraView() {
         />
       </div>
 
-      {/* ── HUD / UI LAYER ── */}
-      <div className="absolute top-6 left-6 z-30 flex flex-col gap-3">
+      {/* ── TOP HUD (Status & Alerts) ── */}
+      <div className="absolute top-12 left-6 z-30 flex flex-col gap-3 pointer-events-none">
         {/* Tracking Status */}
         <div
-          className={`px-3 py-1.5 rounded-sm text-xs font-fira tracking-widest uppercase w-max transition-colors ${
+          className={`px-3 py-1.5 rounded-sm text-xs font-fira tracking-widest uppercase w-max transition-colors shadow-lg ${
             trackingResult.isTracking
               ? "bg-green-500/80 text-black"
-              : "bg-red-500/50 text-white"
+              : "bg-red-500/80 text-white"
           }`}
         >
           {trackingResult.isTracking ? "🪄 Wand Active" : "✋ No Hand"}
         </div>
 
-        {/* Voice Control Button */}
-        <button
-          onClick={toggleListening}
-          className={`flex items-center w-max gap-2 px-3 py-2 rounded-sm text-xs font-fira tracking-widest uppercase transition-all border ${
-            isListening
-              ? "bg-gold-b text-black border-gold-b shadow-[0_0_15px_rgba(240,180,41,0.5)]"
-              : "bg-black/60 text-gold-dim border-gold-dim hover:bg-black/80 hover:text-gold-pale"
-          }`}
-        >
-          {isListening ? <Mic size={14} /> : <MicOff size={14} />}
-          {isListening ? "Listening..." : "Enable Voice"}
-        </button>
-
-        {/* Live Transcript / Error Messages */}
-        {error && (
-          <div className="text-red-400 text-xs font-fira bg-black/60 px-2 py-1 rounded w-max">
-            {error}
-          </div>
-        )}
-        {isListening && transcript && (
-          <div className="bg-black/70 border border-border-dim text-gold-pale px-3 py-2 rounded-sm text-xs font-fira italic max-w-[250px] truncate shadow-lg">
-            "{transcript}"
-          </div>
-        )}
-
         {/* Coordinates (Helpful for debugging) */}
         {trackingResult.wandTip && (
-          <div className="bg-black/60 text-yellow-300/70 px-2 py-1 rounded text-[10px] font-mono w-max">
+          <div className="bg-black/60 backdrop-blur-sm text-yellow-300/70 px-2 py-1 rounded text-[10px] font-mono w-max">
             x: {trackingResult.wandTip.x.toFixed(3)} · y:{" "}
             {trackingResult.wandTip.y.toFixed(3)}
           </div>
@@ -181,6 +172,35 @@ export default function CameraView() {
             {(lastSpell.confidence * 100).toFixed(0)}%)
           </div>
         )}
+      </div>
+
+      {/* ── BOTTOM HUD (Voice Controls & Transcripts) ── */}
+      <div className="absolute bottom-12 inset-x-0 z-30 flex flex-col items-center gap-3">
+        {/* Live Transcript / Error Messages */}
+        {error && (
+          <div className="text-red-400 text-xs font-fira bg-black/80 backdrop-blur-md px-4 py-2 rounded-md shadow-lg text-center">
+            {error}
+          </div>
+        )}
+
+        {isListening && transcript && (
+          <div className="bg-black/80 backdrop-blur-md border border-border-dim text-gold-pale px-4 py-2 rounded-md text-sm font-fira italic max-w-[80%] text-center truncate shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+            "{transcript}"
+          </div>
+        )}
+
+        {/* Voice Control Button */}
+        <button
+          onClick={toggleListening}
+          className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-fira tracking-widest uppercase transition-all border shadow-xl ${
+            isListening
+              ? "bg-gold-b text-black border-gold-b shadow-[0_0_20px_rgba(240,180,41,0.5)] scale-105"
+              : "bg-black/70 text-gold-dim border-gold-dim hover:bg-black/90 hover:text-gold-pale backdrop-blur-md"
+          }`}
+        >
+          {isListening ? <Mic size={16} /> : <MicOff size={16} />}
+          {isListening ? "Listening..." : "Enable Voice"}
+        </button>
       </div>
 
       {/* ── FULL SCREEN FLASH ── */}
