@@ -5,6 +5,8 @@ import LumosEffect from "./LumosEffect"
 import NoxEffect from "./NoxEffect"
 // 🪄 1. Import the global ActiveEffect type that allows all spells
 import type { WandPoint, ActiveEffect } from "@/types"
+import ProtegoEffect from "./ProtegoEffect"
+import StupefyEffect from "./StupefyEffect"
 
 interface Props {
   // 🪄 2. Use the global type here! (This is what fixes the ts(2367) error)
@@ -31,10 +33,12 @@ export default function SpellEffectLayer({
 
   if (!mounted || !activeEffect || !activeEffect.wandTip) return null
 
+  console.log("SpellEffectLayer rendering with activeEffect:", activeEffect)
+
   return (
     // Force this to the absolute front with a high Z-Index
-    <div className="fixed inset-0 z-[999] pointer-events-none">
-      {activeEffect.spell === "lumos" && (
+    <div className="fixed inset-0 z-[999] pointer-events-none bg-red-500/50">
+      {activeEffect?.spell === "lumos" && (
         <LumosEffect
           key={activeEffect.id}
           wandTip={activeEffect.wandTip}
@@ -47,6 +51,26 @@ export default function SpellEffectLayer({
       {/* 🪄 TypeScript now knows "nox" is a valid option! */}
       {activeEffect.spell === "nox" && (
         <NoxEffect
+          key={activeEffect.id}
+          wandTip={activeEffect.wandTip}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          onComplete={onComplete}
+        />
+      )}
+
+      {activeEffect.spell === "protego" && (
+        <ProtegoEffect
+          key={activeEffect.id}
+          wandTip={activeEffect.wandTip}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          onComplete={onComplete}
+        />
+      )}
+
+      {activeEffect.spell === "stupefy" && (
+        <StupefyEffect
           key={activeEffect.id}
           wandTip={activeEffect.wandTip}
           canvasWidth={canvasWidth}
