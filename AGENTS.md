@@ -521,12 +521,14 @@ Camera API is **blocked on HTTP**. Test on:
 
 ## 🐛 Known Bugs & Fixes (Running Log)
 
-| Error                                                                | Cause                                            | Fix                                                                                 |
-| -------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `Export Camera doesn't exist in target module`                       | Named import from CommonJS package               | `import CameraUtils from '@mediapipe/camera_utils'` → `new CameraUtils.Camera(...)` |
-| `Import declaration conflicts with local declaration of 'WandPoint'` | Type defined locally AND imported from `@/types` | Remove local definition, import from `@/types` only                                 |
-| Camera black on phone                                                | Testing via HTTP local IP                        | Use Vercel HTTPS URL on mobile                                                      |
-| Skeleton offset from video                                           | Only one of video/canvas is mirrored             | Apply `scaleX(-1)` to **both**                                                      |
+| Error                                                                         | Cause                                            | Fix                                                                                 |
+| ----------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `Export Camera doesn't exist in target module`                                | Named import from CommonJS package               | `import CameraUtils from '@mediapipe/camera_utils'` → `new CameraUtils.Camera(...)` |
+| `Import declaration conflicts with local declaration of 'WandPoint'`          | Type defined locally AND imported from `@/types` | Remove local definition, import from `@/types` only                                 |
+| Camera black on phone                                                         | Testing via HTTP local IP                        | Use Vercel HTTPS URL on mobile                                                      |
+| Skeleton offset from video                                                    | Only one of video/canvas is mirrored             | Apply `scaleX(-1)` to **both**                                                      |
+| `Export Hands doesn't exist in target module`                                 | Named import from CommonJS package               |
+| Use `import HandsUtils from '@mediapipe/hands'` → `new HandsUtils.Hands(...)` |
 
 ---
 

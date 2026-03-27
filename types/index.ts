@@ -1,20 +1,20 @@
-// ─── HAND TRACKING ───────────────────────────────────────────
+// ─── HAND TRACKING ───────────────────────────────────────────────────────────
 
 // Normalized position from MediaPipe (always 0.0 to 1.0)
 export interface WandPoint {
   x: number
   y: number
-  z: number // depth estimate (less reliable than x/y)
+  z: number // depth estimate — less reliable than x/y
 }
 
 export interface HandTrackingResult {
   isTracking: boolean
   wandTip: WandPoint | null
-  allLandmarks: WandPoint[]
+  allLandmarks: WandPoint[] // always an array, never undefined
   handedness: "Left" | "Right" | null
 }
 
-// ─── SPELLS ──────────────────────────────────────────────────
+// ─── SPELLS ──────────────────────────────────────────────────────────────────
 
 export type SpellName =
   | "lumos"
@@ -32,19 +32,19 @@ export interface SpellMatch {
   castAt: number // Date.now() timestamp
 }
 
-// ─── GAME ────────────────────────────────────────────────────
-
-export type GameMode = "idle" | "practice" | "challenge"
-
 export interface SpellDefinition {
   name: SpellName
   displayName: string
-  color: string // hex color for effect
-  gesture: string // human-readable gesture description
+  color: string // hex — used for particle effect color
+  gesture: string // human-readable gesture hint
   unlocked: boolean
 }
 
-// ─── STORE ───────────────────────────────────────────────────
+// ─── GAME ────────────────────────────────────────────────────────────────────
+
+export type GameMode = "idle" | "practice" | "challenge"
+
+// ─── STORE ───────────────────────────────────────────────────────────────────
 
 export interface WandStore {
   isTracking: boolean
