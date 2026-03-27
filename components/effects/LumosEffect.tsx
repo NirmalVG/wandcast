@@ -51,7 +51,7 @@ export default function LumosEffect({
     // ── CONVERT NORMALIZED WAND TIP → SCREEN COORDS ──────────────────────────
     // MediaPipe gives 0-1, Three.js orthographic uses pixel coords
     // Also mirror X because video is mirrored
-    const sx = (1 - wandTip.x) * canvasWidth
+    const sx = wandTip.x * canvasWidth
     const sy = wandTip.y * canvasHeight
 
     // ── PARTICLES ────────────────────────────────────────────────────────────
@@ -235,11 +235,5 @@ export default function LumosEffect({
     }
   }, [wandTip, canvasWidth, canvasHeight, onComplete])
 
-  return (
-    <div
-      ref={mountRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ transform: "scaleX(-1)" }} // mirror to match camera
-    />
-  )
+  return <div ref={mountRef} className="absolute inset-0 pointer-events-none" />
 }
