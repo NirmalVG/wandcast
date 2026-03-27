@@ -5,7 +5,7 @@ const isMobile =
 
 export const MEDIAPIPE_CONFIG = {
   maxNumHands: 1,
-  modelComplexity: isMobile ? 0 : 1,
+  modelComplexity: 0,
   minDetectionConfidence: 0.6,
   minTrackingConfidence: 0.5,
 } as const
@@ -26,5 +26,5 @@ export const LANDMARKS = {
 } as const
 
 // Spell recognition
-export const CAST_THRESHOLD = 0.7 // minimum confidence to trigger a spell
+export const CAST_THRESHOLD = 0.6 // minimum confidence to trigger a spell
 export const TRAIL_LENGTH = 30 // frames of gesture history to keep

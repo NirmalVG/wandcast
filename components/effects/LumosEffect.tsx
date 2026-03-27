@@ -48,6 +48,13 @@ export default function LumosEffect({
     renderer.setClearColor(0x000000, 0) // fully transparent
     mount.appendChild(renderer.domElement)
 
+    Object.assign(renderer.domElement.style, {
+      position: "absolute",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+    })
+
     // ── CONVERT NORMALIZED WAND TIP → SCREEN COORDS ──────────────────────────
     // MediaPipe gives 0-1, Three.js orthographic uses pixel coords
     // Also mirror X because video is mirrored

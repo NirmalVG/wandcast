@@ -41,6 +41,12 @@ export interface SpellDefinition {
   unlocked: boolean
 }
 
+export interface ActiveEffect {
+  spell: SpellName
+  id: number
+  wandTip: WandPoint
+}
+
 // ─── GAME ────────────────────────────────────────────────────────────────────
 
 export type GameMode = "idle" | "practice" | "challenge"

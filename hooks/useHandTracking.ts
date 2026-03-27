@@ -11,144 +11,113 @@ import {
 } from "@/lib/mediapipe/config"
 import type { WandPoint, HandTrackingResult } from "@/types"
 
-// ⚠️ Make sure your types.ts file has `isReady: boolean` added to HandTrackingResult!
 export function useHandTracking(
   videoRef: React.RefObject<HTMLVideoElement | null>,
 ) {
   const handsRef = useRef<InstanceType<typeof HandsUtils.Hands> | null>(null)
   const cameraRef = useRef<InstanceType<typeof CameraUtils.Camera> | null>(null)
 
-  const [trackingResult, setTrackingResult] = useState<
-    HandTrackingResult & { isReady: boolean }
-  >({
-    isReady: false, // <-- This powers your loading screen
+  const [trackingResult, setTrackingResult] = useState<HandTrackingResult>({
+    isReady: false,
     isTracking: false,
     wandTip: null,
     allLandmarks: [],
     handedness: null,
   })
 
-  // ─── FRAME CALLBACK ──────────────────────────────────────────────────────────
+  // ─── 1. OPTIMIZED RESULTS HANDLER (Fixes the Infinite Loop) ───
   const onResults = useCallback((results: Results) => {
-    // If we get empty results, the AI is running, just no hand is visible yet.
+    // Always ensure isReady is true once we get data
+    setTrackingResult((prev) => {
+      if (!prev.isReady) return { ...prev, isReady: true }
+      return prev
+    })
+
     if (
       !results ||
       !results.multiHandLandmarks ||
       results.multiHandLandmarks.length === 0
     ) {
-      setTrackingResult((prev) => ({
-        ...prev,
-        isReady: true, // Tell the UI to hide the loading spinner
-        isTracking: false,
-        wandTip: null,
-        allLandmarks: [],
-        handedness: null,
-      }))
+      setTrackingResult((prev) => {
+        if (!prev.isTracking) return prev // Prevent infinite re-renders if already false
+        return { ...prev, isTracking: false, wandTip: null, allLandmarks: [] }
+      })
       return
     }
 
-    // First hand only (maxNumHands: 1)
     const landmarks = results.multiHandLandmarks[0]
-
-    if (!landmarks || landmarks.length === 0) {
-      setTrackingResult((prev) => ({
-        ...prev,
-        isReady: true,
-        isTracking: false,
-        wandTip: null,
-        allLandmarks: [],
-        handedness: null,
-      }))
-      return
-    }
-
     const handedness =
       (results.multiHandedness?.[0]?.label as "Left" | "Right") ?? null
-
-    // Landmark 8 = index finger tip = wand tip 🪄
     const tip = landmarks[LANDMARKS.WAND_TIP]
 
     if (!tip) return
 
-    const wandTip: WandPoint = {
-      x: tip.x ?? 0,
-      y: tip.y ?? 0,
-      z: tip.z ?? 0,
-    }
-
-    const allLandmarks: WandPoint[] = landmarks.map((lm) => ({
-      x: lm?.x ?? 0,
-      y: lm?.y ?? 0,
-      z: lm?.z ?? 0,
-    }))
-
-    setTrackingResult({
-      isReady: true, // Model is hot and tracking a hand!
+    setTrackingResult((prev) => ({
+      ...prev,
       isTracking: true,
-      wandTip,
-      allLandmarks,
+      wandTip: { x: tip.x, y: tip.y, z: tip.z ?? 0 },
+      allLandmarks: landmarks.map((lm) => ({ x: lm.x, y: lm.y, z: lm.z ?? 0 })),
       handedness,
-    })
+    }))
   }, [])
 
-  // ─── MEDIAPIPE INIT ──────────────────────────────────────────────────────────
+  // ─── 2. ENGINE MOUNT / UNMOUNT (Fixes the C++ Abort Crash) ───
   useEffect(() => {
     if (!videoRef.current) return
+    let isMounted = true
 
-    let isMounted = true // Protects against React Strict Mode double-firing
+    // 🪄 The Safety Timer is declared here, perfectly in scope for the cleanup!
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setTrackingResult((prev) =>
+          prev.isReady ? prev : { ...prev, isReady: true },
+        )
+        console.warn(
+          "Wand Engine: AI initialization timed out. Forcing UI active.",
+        )
+      }
+    }, 6000)
 
-    // 1. Initialize MediaPipe Hands model
+    // Initialize MediaPipe Hands
     const hands = new HandsUtils.Hands({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      locateFile: (file) => {
+        const fileName = file || "hands.binarypb"
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${fileName}`
+      },
     })
 
     hands.setOptions(MEDIAPIPE_CONFIG)
     hands.onResults(onResults)
     handsRef.current = hands
 
-    // 2. Initialize Camera
-    // Crucial Fix: Mobile cameras are portrait, Desktop webcams are landscape.
-    // If we don't flip this on mobile, the video gets squished and tracking fails.
-    const isMobile = window.innerWidth <= 768
-    const reqWidth = isMobile ? CAMERA_CONFIG.height : CAMERA_CONFIG.width
-    const reqHeight = isMobile ? CAMERA_CONFIG.width : CAMERA_CONFIG.height
-
+    // Initialize Camera
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768
     const camera = new CameraUtils.Camera(videoRef.current, {
       onFrame: async () => {
-        // Prevent silent crashes if component unmounted or video isn't ready
         if (!isMounted || !videoRef.current || !handsRef.current) return
-        if (videoRef.current.videoWidth === 0) return
-
         try {
           await handsRef.current.send({ image: videoRef.current })
-        } catch (error) {
-          console.warn("MediaPipe skipped a frame:", error)
+        } catch (e) {
+          // Silently catch frame skips while the AI boots up
         }
       },
-      width: reqWidth,
-      height: reqHeight,
+      width: isMobile ? 480 : 1280,
+      height: isMobile ? 640 : 720,
     })
 
-    camera.start().catch((err) => console.error("Camera failed:", err))
+    camera.start().catch((err) => console.error("Camera start error:", err))
     cameraRef.current = camera
 
-    // 3. Pause when tab is hidden — saves mobile battery
-    const handleVisibility = () => {
-      if (document.hidden) {
-        camera.stop()
-      } else {
-        camera.start().catch(console.error)
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility)
-
-    // 4. Full cleanup on unmount
+    // ─── CLEANUP (Kills the engine cleanly on Fast Refresh) ───
     return () => {
       isMounted = false
-      document.removeEventListener("visibilitychange", handleVisibility)
-      if (cameraRef.current) cameraRef.current.stop()
-      if (handsRef.current) handsRef.current.close()
+      clearTimeout(safetyTimer) // 👈 No more "Cannot find name" error!
+      if (cameraRef.current) {
+        cameraRef.current.stop()
+      }
+      if (handsRef.current) {
+        handsRef.current.close()
+      }
     }
   }, [videoRef, onResults])
 

@@ -1,10 +1,13 @@
 "use client"
 
-import type { ActiveEffect } from "@/hooks/useSpellEffects"
-import type { WandPoint } from "@/types"
+import { useEffect, useState } from "react"
 import LumosEffect from "./LumosEffect"
+import NoxEffect from "./NoxEffect"
+// 🪄 1. Import the global ActiveEffect type that allows all spells
+import type { WandPoint, ActiveEffect } from "@/types"
 
 interface Props {
+  // 🪄 2. Use the global type here! (This is what fixes the ts(2367) error)
   activeEffect: ActiveEffect | null
   wandTip: WandPoint | null
   canvasWidth: number
@@ -19,23 +22,38 @@ export default function SpellEffectLayer({
   canvasHeight,
   onComplete,
 }: Props) {
-  if (!activeEffect || !wandTip) return null
+  const [mounted, setMounted] = useState(false)
 
-  // key={activeEffect.id} forces full remount on each new cast
-  switch (activeEffect.spell) {
-    case "lumos":
-      return (
+  // Fix Hydration Mismatch: Only render on the client
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted || !activeEffect || !activeEffect.wandTip) return null
+
+  return (
+    // Force this to the absolute front with a high Z-Index
+    <div className="fixed inset-0 z-[999] pointer-events-none">
+      {activeEffect.spell === "lumos" && (
         <LumosEffect
           key={activeEffect.id}
-          wandTip={wandTip}
+          wandTip={activeEffect.wandTip}
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
           onComplete={onComplete}
         />
-      )
+      )}
 
-    // Other spells added in future lessons
-    default:
-      return null
-  }
+      {/* 🪄 TypeScript now knows "nox" is a valid option! */}
+      {activeEffect.spell === "nox" && (
+        <NoxEffect
+          key={activeEffect.id}
+          wandTip={activeEffect.wandTip}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          onComplete={onComplete}
+        />
+      )}
+    </div>
+  )
 }

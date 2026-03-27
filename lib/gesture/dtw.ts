@@ -38,8 +38,6 @@ export function dtwDistance(
 // Convert raw DTW distance → 0.0–1.0 confidence score
 // Lower distance = higher confidence
 export function distanceToConfidence(distance: number): number {
-  // Empirically tuned — distances below 0.5 are very similar
-  const maxDistance = 3.0
-  const confidence = Math.max(0, 1 - distance / maxDistance)
-  return confidence
+  const maxDistance = 4.0 // was 3.0
+  return Math.max(0, 1 - distance / maxDistance)
 }

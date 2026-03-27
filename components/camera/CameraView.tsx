@@ -48,28 +48,31 @@ export default function CameraView() {
   const trackingSnapshotRef = useRef(trackingResult)
   const voiceSpellRef = useRef(detectedSpell)
 
+  const lastCastTimeRef = useRef(0)
+
   useEffect(() => {
     trackingSnapshotRef.current = trackingResult
     voiceSpellRef.current = detectedSpell
   }, [trackingResult, detectedSpell])
 
   // ─── THE MASTER LOOP ──────────────────────────────────────────────
+  // ─── THE MASTER RENDER & RECOGNITION LOOP ─────────────────────────
   useEffect(() => {
     let animFrameId: number
 
     const loop = () => {
-      // 1. Draw the visual trail overlay
-      overlayRef.current?.draw(
-        trackingSnapshotRef.current,
-        trailRef.current ?? [],
-      )
+      // 1. Draw the 2D Canvas Trail
+      if (overlayRef.current) {
+        overlayRef.current.draw(
+          trackingSnapshotRef.current,
+          trailRef.current ?? [],
+        )
+      }
 
-      // 2. Calculate gesture match
+      // 2. Run Gesture Recognition
       const match = recognizeSpell(trailRef.current ?? [])
 
-      // 3. THE FORGIVENESS MULTIPLIER 🪄
-      // If the physical gesture was sloppy (> 40%) but the microphone
-      // explicitly heard the correct spell, boost confidence to 100%.
+      // 3. Voice Forgiveness Logic
       if (
         match.spell &&
         match.confidence > 0.4 &&
@@ -78,12 +81,34 @@ export default function CameraView() {
         match.confidence = 1.0
       }
 
-      // 4. Fire the spell
-      if (match.spell && match.confidence >= 0.7) {
-        setLastSpell({ ...match }) // Clone to force re-render of HUD
-        triggerEffect(match.spell)
+      // 4. Trigger Magic!
+      const now = Date.now()
+      const timeSinceLastCast = now - lastCastTimeRef.current
 
-        // Trigger full-screen flash
+      // If we have a match above 70% AND it's been more than 1 second since the last cast
+      if (match.spell && match.confidence >= 0.7 && timeSinceLastCast > 1000) {
+        // ⚡️ STEP 1: Lock the cooldown IMMEDIATELY so we don't double-fire
+        lastCastTimeRef.current = now
+
+        // ⚡️ STEP 2: Clear the trail IMMEDIATELY so the AI stops recognizing it
+        clearTrail()
+
+        // ⚡️ STEP 3: Grab the current tip coordinate (fallback to center if lost)
+        const currentTip = trackingSnapshotRef.current.wandTip || {
+          x: 0.5,
+          y: 0.5,
+          z: 0,
+        }
+
+        console.log(`🪄 CASTING ${match.spell.toUpperCase()}! at`, currentTip)
+
+        // ⚡️ STEP 4: Fire the React State Updates
+        setLastSpell({ ...match, castAt: now })
+
+        // This is the crucial line that tells SpellEffectLayer to render!
+        triggerEffect(match.spell as any, currentTip)
+
+        // ⚡️ STEP 5: Flash the screen
         setFlash(true)
         setTimeout(() => setFlash(false), 150)
       }
@@ -93,7 +118,7 @@ export default function CameraView() {
 
     animFrameId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(animFrameId)
-  }, [trailRef, recognizeSpell, triggerEffect])
+  }, [trailRef, recognizeSpell, triggerEffect, clearTrail])
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
@@ -173,6 +198,12 @@ export default function CameraView() {
           </div>
         )}
       </div>
+
+      {activeEffect && (
+        <div className="absolute top-1 right-1 z-50 text-white text-xs bg-red-600 p-1">
+          {activeEffect.spell} #{activeEffect.id}
+        </div>
+      )}
 
       {/* ── BOTTOM HUD (Voice Controls & Transcripts) ── */}
       <div className="absolute bottom-12 inset-x-0 z-30 flex flex-col items-center gap-3">

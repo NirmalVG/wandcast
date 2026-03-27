@@ -1,20 +1,18 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import type { SpellName } from "@/types"
-
-export interface ActiveEffect {
-  spell: SpellName
-  id: number // unique key so React remounts on each cast
-}
+// 🪄 Make sure to import WandPoint so TypeScript knows what a coordinate is
+import type { SpellName, WandPoint, ActiveEffect } from "@/types"
 
 export function useSpellEffects() {
   const [activeEffect, setActiveEffect] = useState<ActiveEffect | null>(null)
 
-  const triggerEffect = useCallback((spell: SpellName) => {
+  // 🪄 ADDED: Tell the function it requires a tip coordinate when called
+  const triggerEffect = useCallback((spell: SpellName, tip: WandPoint) => {
     setActiveEffect({
       spell,
       id: Date.now(), // forces remount = fresh animation
+      wandTip: tip, // 🪄 ADDED: Save the coordinate into the state
     })
   }, [])
 

@@ -25,13 +25,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html
-      lang="en"
-      className={`${cinzel.variable} ${crimson.variable} ${fira.variable} scroll-smooth`}
-    >
-      <body className="antialiased selection:bg-gold-b selection:text-bg-dark">
-        <ParticleBackground />
-        <CustomCursor />
+    // 🪄 Add suppressHydrationWarning to both tags
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className="antialiased selection:bg-gold-b selection:text-bg-dark"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>
