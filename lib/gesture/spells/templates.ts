@@ -3,11 +3,10 @@ import type { SpellName } from "@/types"
 
 // Each template is 32 normalized points representing the ideal gesture path
 export const SPELL_TEMPLATES: Record<SpellName, NormalizedPoint[]> = {
-  // Lumos — straight upward flick ↑
-  lumos: generateLine([0, 0.8], [0, -0.8], 32),
+  lumos: generateAlphaLoop(32),
 
   // Nox — straight downward sweep ↓
-  nox: generateLine([0, -0.8], [0, 0.8], 32),
+  nox: generateArc("top", 32),
 
   // Accio — curved pull toward you ←
   accio: generateArc("left", 32),
@@ -72,11 +71,23 @@ function generateCircle(
   })
 }
 
-function generateArc(side: "left" | "right", count: number): NormalizedPoint[] {
-  const dir = side === "left" ? -1 : 1
+function generateArc(
+  side: "left" | "right" | "top",
+  count: number,
+): NormalizedPoint[] {
   return Array.from({ length: count }, (_, i) => {
     const t = i / (count - 1)
     const angle = Math.PI * t
+
+    if (side === "top") {
+      // Draws an arch (Dome). Starts mid-left, arcs up, ends mid-right.
+      return {
+        x: -0.8 + t * 1.6,
+        y: -Math.sin(angle) * 0.8,
+      }
+    }
+
+    const dir = side === "left" ? -1 : 1
     return {
       x: dir * Math.sin(angle) * 0.8,
       y: 0.8 - t * 1.6,
@@ -116,6 +127,18 @@ function generateSCurve(count: number, scale = 1): NormalizedPoint[] {
     return {
       x: Math.sin(t * Math.PI * 2) * 0.6 * scale,
       y: (0.8 - t * 1.6) * scale,
+    }
+  })
+}
+
+function generateAlphaLoop(count: number): NormalizedPoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    // t goes from 0 to 2π
+    const t = (i / (count - 1)) * Math.PI * 2
+    return {
+      // Lissajous curve math to create a perfect overlapping ribbon/alpha shape
+      x: Math.sin(t) * 0.8,
+      y: Math.sin(2 * t) * -0.8,
     }
   })
 }
