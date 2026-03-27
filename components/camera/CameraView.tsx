@@ -8,14 +8,20 @@ import HandOverlay from "./HandOverlay"
 import type { HandOverlayHandle } from "./HandOverlay"
 import { CAMERA_CONFIG } from "@/lib/mediapipe/config"
 import type { SpellMatch } from "@/types"
+import { useSpellEffects } from "@/hooks/useSpellEffects"
+import SpellEffectLayer from "@/components/effects/SpellEffectLayer"
 
 export default function CameraView() {
+  const [flash, setFlash] = useState(false)
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HandOverlayHandle>(null)
 
   const trackingResult = useHandTracking(videoRef)
   const { addPoint, clearTrail, trailRef } = useWandTrail()
   const { recognizeSpell } = useSpellRecognition()
+
+  const { activeEffect, triggerEffect, clearEffect } = useSpellEffects()
 
   // Only spell result needs React state — drives UI text
   const [lastSpell, setLastSpell] = useState<SpellMatch>({
@@ -48,7 +54,10 @@ export default function CameraView() {
       // Spell recognition
       const match = recognizeSpell(trailRef.current ?? [])
       if (match.spell) {
-        setLastSpell(match) // only setState when a spell actually fires
+        setLastSpell(match)
+        triggerEffect(match.spell)
+        setFlash(true)
+        setTimeout(() => setFlash(false), 150)
       }
 
       animFrameId = requestAnimationFrame(loop)
@@ -101,6 +110,14 @@ export default function CameraView() {
         height={CAMERA_CONFIG.height}
       />
 
+      <SpellEffectLayer
+        activeEffect={activeEffect}
+        wandTip={trackingResult.wandTip}
+        canvasWidth={CAMERA_CONFIG.width}
+        canvasHeight={CAMERA_CONFIG.height}
+        onComplete={clearEffect}
+      />
+
       {/* HUD — only re-renders on spell cast */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-1">
         <div
@@ -123,6 +140,16 @@ export default function CameraView() {
             ✨ {lastSpell.spell.toUpperCase()}! (
             {(lastSpell.confidence * 100).toFixed(0)}%)
           </div>
+        )}
+
+        {flash && (
+          <div
+            className="absolute inset-0 pointer-events-none z-20"
+            style={{
+              background: "rgba(255, 220, 60, 0.25)",
+              animation: "flashOut 0.15s ease-out both",
+            }}
+          />
         )}
       </div>
     </div>
