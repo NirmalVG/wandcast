@@ -1,8 +1,41 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+
+import { useCallback, useEffect, useState } from "react"
 import type { SpellName } from "@/types"
 
-// The browser will mishear Latin spells. We catch the common mistakes here.
+interface SpeechRecognitionAlternative {
+  transcript: string
+}
+
+interface SpeechRecognitionResultLike {
+  0: SpeechRecognitionAlternative
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number
+  results: SpeechRecognitionResultLike[]
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onstart: (() => void) | null
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null
+  onend: (() => void) | null
+  start: () => void
+}
+
+interface BrowserSpeechWindow extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionInstance
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance
+}
+
 const SPELL_DICTIONARY: Record<SpellName, string[]> = {
   lumos: ["lumos", "loomis", "lumens", "blue moss", "lou most", "loumos"],
   nox: ["nox", "knocks", "locks", "box", "max", "rocks"],
@@ -26,21 +59,19 @@ export function useIncantation() {
   const [detectedSpell, setDetectedSpell] = useState<SpellName | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Auto-clear the detected spell after 2 seconds
   useEffect(() => {
-    if (detectedSpell) {
-      const timer = setTimeout(() => setDetectedSpell(null), 2000)
-      return () => clearTimeout(timer)
-    }
+    if (!detectedSpell) return
+
+    const timer = window.setTimeout(() => setDetectedSpell(null), 2000)
+    return () => window.clearTimeout(timer)
   }, [detectedSpell])
 
   const toggleListening = useCallback(() => {
     if (typeof window === "undefined") return
 
-    // Cross-browser support
+    const speechWindow = window as BrowserSpeechWindow
     const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition
+      speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition
 
     if (!SpeechRecognition) {
       setError("Your browser does not support voice spells. Try Chrome.")
@@ -49,12 +80,12 @@ export function useIncantation() {
 
     if (isListening) {
       setIsListening(false)
-      return // The recognition.onend event will handle stopping
+      return
     }
 
     const recognition = new SpeechRecognition()
-    recognition.continuous = true // Keep listening
-    recognition.interimResults = true // Show words as they are spoken
+    recognition.continuous = true
+    recognition.interimResults = true
     recognition.lang = "en-US"
 
     recognition.onstart = () => {
@@ -62,23 +93,21 @@ export function useIncantation() {
       setError(null)
     }
 
-    recognition.onresult = (event: any) => {
-      // Get the most recent phrase spoken
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       const current = event.resultIndex
       const text = event.results[current][0].transcript.toLowerCase().trim()
       setTranscript(text)
 
-      // Check if the text contains any of our spells or fuzzy matches
       for (const [spell, aliases] of Object.entries(SPELL_DICTIONARY)) {
         if (aliases.some((alias) => text.includes(alias))) {
           setDetectedSpell(spell as SpellName)
-          setTranscript(`✨ ${spell.toUpperCase()} ✨`)
-          break // Stop searching once a spell is found
+          setTranscript(`Spell detected: ${spell.toUpperCase()}`)
+          break
         }
       }
     }
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       if (event.error === "not-allowed") {
         setError("Microphone access denied by the Ministry of Magic.")
       }

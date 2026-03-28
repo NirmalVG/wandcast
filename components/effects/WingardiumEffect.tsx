@@ -10,6 +10,6 @@ interface Props {
   onComplete: () => void
 }
 
-export default function NoxEffect(props: Props) {
-  return <BaseSpellEffect spell="nox" {...props} />
+export default function WingardiumEffect(props: Props) {
+  return <BaseSpellEffect spell="wingardium" {...props} />
 }

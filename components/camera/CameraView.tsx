@@ -1,25 +1,40 @@
 "use client"
 
-import { useRef, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Mic, MicOff } from "lucide-react"
+import SpellEffectLayer from "@/components/effects/SpellEffectLayer"
 import { useHandTracking } from "@/hooks/useHandTracking"
-import { useWandTrail } from "@/hooks/useWandTrail"
-import { useSpellRecognition } from "@/hooks/useSpellRecognition"
-import { useSpellEffects } from "@/hooks/useSpellEffects"
 import { useIncantation } from "@/hooks/useIncantation"
+import { useSpellEffects } from "@/hooks/useSpellEffects"
+import { useSpellRecognition } from "@/hooks/useSpellRecognition"
+import { useWandTrail } from "@/hooks/useWandTrail"
+import { CAMERA_CONFIG } from "@/lib/mediapipe/config"
+import type { SpellMatch, SpellName, WandPoint } from "@/types"
 import HandOverlay from "./HandOverlay"
 import type { HandOverlayHandle } from "./HandOverlay"
-import SpellEffectLayer from "@/components/effects/SpellEffectLayer"
-import { CAMERA_CONFIG } from "@/lib/mediapipe/config"
-import type { SpellMatch } from "@/types"
+
+const FLASH_DURATION_MS = 240
+const SPELL_BADGE_DURATION_MS = 1800
 
 export default function CameraView() {
   const [flash, setFlash] = useState(false)
+  const [viewportSize, setViewportSize] = useState<{
+    width: number
+    height: number
+  }>({
+    width: CAMERA_CONFIG.width,
+    height: CAMERA_CONFIG.height,
+  })
+  const [lastSpell, setLastSpell] = useState<SpellMatch>({
+    spell: null,
+    confidence: 0,
+    castAt: 0,
+  })
 
+  const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HandOverlayHandle>(null)
 
-  // ─── HOOKS ────────────────────────────────────────────────────────
   const trackingResult = useHandTracking(videoRef)
   const { addPoint, clearTrail, trailRef } = useWandTrail()
   const { recognizeSpell } = useSpellRecognition()
@@ -27,206 +42,239 @@ export default function CameraView() {
   const { isListening, transcript, detectedSpell, error, toggleListening } =
     useIncantation()
 
-  const [lastSpell, setLastSpell] = useState<SpellMatch>({
-    spell: null,
-    confidence: 0,
-    castAt: 0,
-  })
+  const trackingSnapshotRef = useRef(trackingResult)
+  const voiceSpellRef = useRef(detectedSpell)
+  const lastCastTimeRef = useRef(0)
+  const lastVoiceCastRef = useRef<SpellName | null>(null)
 
-  // ─── TRAIL MANAGEMENT ─────────────────────────────────────────────
+  const castSpell = useCallback((
+    spell: SpellName,
+    confidence: number,
+    tip?: WandPoint | null,
+  ) => {
+    const now = Date.now()
+    const currentTip = tip ?? trackingSnapshotRef.current.wandTip ?? {
+      x: 0.5,
+      y: 0.5,
+      z: 0,
+    }
+
+    lastCastTimeRef.current = now
+    setLastSpell({
+      spell,
+      confidence,
+      castAt: now,
+    })
+    triggerEffect(spell, currentTip)
+    setFlash(true)
+    window.setTimeout(() => setFlash(false), FLASH_DURATION_MS)
+  }, [triggerEffect])
+
   useEffect(() => {
     if (trackingResult.isTracking && trackingResult.wandTip) {
       addPoint(trackingResult.wandTip)
-    } else {
-      clearTrail()
+      return
     }
-  }, [trackingResult, addPoint, clearTrail])
 
-  // ─── RENDER LOOP SNAPSHOTS ────────────────────────────────────────
-  // We use refs so the requestAnimationFrame loop always sees the freshest data
-  // without needing to be re-initialized.
-  const trackingSnapshotRef = useRef(trackingResult)
-  const voiceSpellRef = useRef(detectedSpell)
-
-  const lastCastTimeRef = useRef(0)
+    clearTrail()
+  }, [addPoint, clearTrail, trackingResult])
 
   useEffect(() => {
     trackingSnapshotRef.current = trackingResult
     voiceSpellRef.current = detectedSpell
-  }, [trackingResult, detectedSpell])
+  }, [detectedSpell, trackingResult])
 
-  // ─── THE MASTER LOOP ──────────────────────────────────────────────
-  // ─── THE MASTER RENDER & RECOGNITION LOOP ─────────────────────────
   useEffect(() => {
-    let animFrameId: number
+    if (!lastSpell.spell) return
+
+    const timer = window.setTimeout(() => {
+      setLastSpell({
+        spell: null,
+        confidence: 0,
+        castAt: 0,
+      })
+    }, SPELL_BADGE_DURATION_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [lastSpell])
+
+  useEffect(() => {
+    if (!detectedSpell) {
+      lastVoiceCastRef.current = null
+      return
+    }
+
+    if (!detectedSpell || detectedSpell === lastVoiceCastRef.current) return
+
+    lastVoiceCastRef.current = detectedSpell
+    const castFrame = window.requestAnimationFrame(() => {
+      castSpell(detectedSpell, 1, trackingResult.wandTip)
+    })
+
+    return () => {
+      window.cancelAnimationFrame(castFrame)
+    }
+  }, [castSpell, detectedSpell, trackingResult.wandTip])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const updateViewport = () => {
+      const { width, height } = container.getBoundingClientRect()
+      if (width > 0 && height > 0) {
+        setViewportSize({
+          width: Math.round(width),
+          height: Math.round(height),
+        })
+      }
+    }
+
+    updateViewport()
+
+    const observer = new ResizeObserver(() => {
+      updateViewport()
+    })
+
+    observer.observe(container)
+    window.addEventListener("orientationchange", updateViewport)
+    window.addEventListener("resize", updateViewport)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("orientationchange", updateViewport)
+      window.removeEventListener("resize", updateViewport)
+    }
+  }, [])
+
+  useEffect(() => {
+    let frameId = 0
 
     const loop = () => {
-      // 1. Draw the 2D Canvas Trail
-      if (overlayRef.current) {
-        overlayRef.current.draw(
-          trackingSnapshotRef.current,
-          trailRef.current ?? [],
-        )
-      }
+      overlayRef.current?.draw(
+        trackingSnapshotRef.current,
+        trailRef.current ?? [],
+      )
 
-      // 2. Run Gesture Recognition
       const match = recognizeSpell(trailRef.current ?? [])
 
-      // 3. Voice Forgiveness Logic
       if (
         match.spell &&
         match.confidence > 0.4 &&
         match.spell === voiceSpellRef.current
       ) {
-        match.confidence = 1.0
+        match.confidence = 1
       }
 
-      // 4. Trigger Magic!
       const now = Date.now()
       const timeSinceLastCast = now - lastCastTimeRef.current
 
-      // If we have a match above 70% AND it's been more than 1 second since the last cast
       if (match.spell && match.confidence >= 0.7 && timeSinceLastCast > 1000) {
-        // ⚡️ STEP 1: Lock the cooldown IMMEDIATELY so we don't double-fire
-        lastCastTimeRef.current = now
-
-        // ⚡️ STEP 2: Clear the trail IMMEDIATELY so the AI stops recognizing it
         clearTrail()
-
-        // ⚡️ STEP 3: Grab the current tip coordinate (fallback to center if lost)
-        const currentTip = trackingSnapshotRef.current.wandTip || {
-          x: 0.5,
-          y: 0.5,
-          z: 0,
-        }
-
-        console.log(`🪄 CASTING ${match.spell.toUpperCase()}! at`, currentTip)
-
-        // ⚡️ STEP 4: Fire the React State Updates
-        setLastSpell({ ...match, castAt: now })
-
-        // This is the crucial line that tells SpellEffectLayer to render!
-        triggerEffect(match.spell as any, currentTip)
-
-        // ⚡️ STEP 5: Flash the screen
-        setFlash(true)
-        setTimeout(() => setFlash(false), 150)
+        castSpell(
+          match.spell,
+          match.confidence,
+          trackingSnapshotRef.current.wandTip,
+        )
       }
 
-      animFrameId = requestAnimationFrame(loop)
+      frameId = requestAnimationFrame(loop)
     }
 
-    animFrameId = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(animFrameId)
-  }, [trailRef, recognizeSpell, triggerEffect, clearTrail])
+    frameId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frameId)
+  }, [castSpell, clearTrail, recognizeSpell, trailRef])
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-black">
-      {/* ── CAMERA FEED ── */}
+    <div
+      ref={containerRef}
+      className="relative h-full w-full overflow-hidden bg-black"
+    >
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        webkit-playsinline="true"
         muted
-        className="absolute inset-0 w-full h-full object-cover -scale-x-100"
+        className="absolute inset-0 h-full w-full object-cover -scale-x-100"
       />
 
-      {/* ── WARM-UP LOADING SCREEN ── */}
       {!trackingResult.isReady && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-bg-dark/95 backdrop-blur-sm transition-opacity duration-500">
-          <div className="relative w-16 h-16 flex items-center justify-center mb-6">
-            <div className="absolute inset-0 border-2 border-gold-dim border-t-gold-b rounded-full animate-spin" />
-            <div className="absolute inset-2 border border-gold-dim/50 border-b-gold-pale rounded-full animate-spin direction-reverse" />
+          <div className="relative mb-6 flex h-16 w-16 items-center justify-center">
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-gold-dim border-t-gold-b" />
+            <div className="direction-reverse absolute inset-2 animate-spin rounded-full border border-gold-dim/50 border-b-gold-pale" />
             <span className="font-cinzel text-xl text-gold-b">W</span>
           </div>
-          <h2 className="font-cinzel text-lg tracking-widest text-ink mb-2">
+          <h2 className="mb-2 font-cinzel text-lg tracking-widest text-ink">
             Aligning Arcane Focus
           </h2>
-          <p className="font-fira text-xs text-ink-dim tracking-widest animate-pulse">
+          <p className="animate-pulse font-fira text-xs tracking-widest text-ink-dim">
             CALIBRATING NEURAL MODEL...
           </p>
         </div>
       )}
 
-      {/* ── 2D CANVAS (Hand Skeleton & Trail) ── */}
-      <div className="absolute inset-0 w-full h-full pointer-events-none -scale-x-100">
+      <div className="absolute inset-0 h-full w-full -scale-x-100 pointer-events-none">
         <HandOverlay
           ref={overlayRef}
-          width={CAMERA_CONFIG.width}
-          height={CAMERA_CONFIG.height}
+          width={viewportSize.width}
+          height={viewportSize.height}
         />
       </div>
 
-      {/* ── 3D CANVAS (Three.js Particles) ── */}
-      <div className="absolute inset-0 w-full h-full pointer-events-none -scale-x-100">
+      <div className="absolute inset-0 h-full w-full -scale-x-100 pointer-events-none">
         <SpellEffectLayer
           activeEffect={activeEffect}
-          wandTip={trackingResult.wandTip}
-          canvasWidth={CAMERA_CONFIG.width}
-          canvasHeight={CAMERA_CONFIG.height}
+          canvasWidth={viewportSize.width}
+          canvasHeight={viewportSize.height}
           onComplete={clearEffect}
         />
       </div>
 
-      {/* ── TOP HUD (Status & Alerts) ── */}
-      <div className="absolute top-12 left-6 z-30 flex flex-col gap-3 pointer-events-none">
-        {/* Tracking Status */}
+      <div className="pointer-events-none absolute left-6 top-12 z-30 flex flex-col gap-3">
         <div
-          className={`px-3 py-1.5 rounded-sm text-xs font-fira tracking-widest uppercase w-max transition-colors shadow-lg ${
+          className={`w-max rounded-sm px-3 py-1.5 font-fira text-xs uppercase tracking-widest shadow-lg transition-colors ${
             trackingResult.isTracking
               ? "bg-green-500/80 text-black"
               : "bg-red-500/80 text-white"
           }`}
         >
-          {trackingResult.isTracking ? "🪄 Wand Active" : "✋ No Hand"}
+          {trackingResult.isTracking ? "Wand Active" : "No Hand"}
         </div>
 
-        {/* Coordinates (Helpful for debugging) */}
         {trackingResult.wandTip && (
-          <div className="bg-black/60 backdrop-blur-sm text-yellow-300/70 px-2 py-1 rounded text-[10px] font-mono w-max">
+          <div className="w-max rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-yellow-300/70 backdrop-blur-sm">
             x: {trackingResult.wandTip.x.toFixed(3)} · y:{" "}
             {trackingResult.wandTip.y.toFixed(3)}
           </div>
         )}
 
-        {/* Spell Cast Alert */}
         {lastSpell.spell && (
-          <div className="mt-2 bg-gold-b text-black px-4 py-3 rounded-sm font-cinzel text-lg font-bold shadow-[0_0_20px_rgba(240,180,41,0.6)] animate-pulse w-max">
-            ✨ {lastSpell.spell.toUpperCase()}! (
-            {(lastSpell.confidence * 100).toFixed(0)}%)
+          <div className="mt-2 w-max animate-pulse rounded-sm bg-gold-b px-4 py-3 font-cinzel text-lg font-bold text-black shadow-[0_0_20px_rgba(240,180,41,0.6)]">
+            {lastSpell.spell.toUpperCase()} ({(lastSpell.confidence * 100).toFixed(0)}%)
           </div>
         )}
       </div>
 
-      {activeEffect && (
-        <div className="absolute top-1 right-1 z-50 text-white text-xs bg-red-600 p-1">
-          {activeEffect.spell} #{activeEffect.id}
-        </div>
-      )}
-
-      {/* ── BOTTOM HUD (Voice Controls & Transcripts) ── */}
-      <div className="absolute bottom-12 inset-x-0 z-30 flex flex-col items-center gap-3">
-        {/* Live Transcript / Error Messages */}
+      <div className="absolute inset-x-0 bottom-12 z-30 flex flex-col items-center gap-3 px-4">
         {error && (
-          <div className="text-red-400 text-xs font-fira bg-black/80 backdrop-blur-md px-4 py-2 rounded-md shadow-lg text-center">
+          <div className="rounded-md bg-black/80 px-4 py-2 text-center font-fira text-xs text-red-400 shadow-lg backdrop-blur-md">
             {error}
           </div>
         )}
 
         {isListening && transcript && (
-          <div className="bg-black/80 backdrop-blur-md border border-border-dim text-gold-pale px-4 py-2 rounded-md text-sm font-fira italic max-w-[80%] text-center truncate shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-            "{transcript}"
+          <div className="max-w-[80%] truncate rounded-md border border-border-dim bg-black/80 px-4 py-2 text-center font-fira text-sm italic text-gold-pale shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md">
+            &quot;{transcript}&quot;
           </div>
         )}
 
-        {/* Voice Control Button */}
         <button
           onClick={toggleListening}
-          className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-fira tracking-widest uppercase transition-all border shadow-xl ${
+          className={`flex items-center gap-2 rounded-full border px-6 py-3 font-fira text-xs uppercase tracking-widest shadow-xl transition-all ${
             isListening
-              ? "bg-gold-b text-black border-gold-b shadow-[0_0_20px_rgba(240,180,41,0.5)] scale-105"
-              : "bg-black/70 text-gold-dim border-gold-dim hover:bg-black/90 hover:text-gold-pale backdrop-blur-md"
+              ? "scale-105 border-gold-b bg-gold-b text-black shadow-[0_0_20px_rgba(240,180,41,0.5)]"
+              : "border-gold-dim bg-black/70 text-gold-dim backdrop-blur-md hover:bg-black/90 hover:text-gold-pale"
           }`}
         >
           {isListening ? <Mic size={16} /> : <MicOff size={16} />}
@@ -234,13 +282,12 @@ export default function CameraView() {
         </button>
       </div>
 
-      {/* ── FULL SCREEN FLASH ── */}
       {flash && (
         <div
-          className="absolute inset-0 pointer-events-none z-20"
+          className="absolute inset-0 z-20 pointer-events-none"
           style={{
             background: "rgba(255, 220, 60, 0.25)",
-            animation: "flashOut 0.15s ease-out both",
+            animation: "flashOut 0.24s ease-out both",
           }}
         />
       )}

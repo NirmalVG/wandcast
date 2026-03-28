@@ -6,10 +6,9 @@ import type { Results } from "@mediapipe/hands"
 import CameraUtils from "@mediapipe/camera_utils"
 import {
   MEDIAPIPE_CONFIG,
-  CAMERA_CONFIG,
   LANDMARKS,
 } from "@/lib/mediapipe/config"
-import type { WandPoint, HandTrackingResult } from "@/types"
+import type { HandTrackingResult } from "@/types"
 
 export function useHandTracking(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -67,17 +66,6 @@ export function useHandTracking(
     let isMounted = true
 
     // 🪄 The Safety Timer is declared here, perfectly in scope for the cleanup!
-    const safetyTimer = setTimeout(() => {
-      if (isMounted) {
-        setTrackingResult((prev) =>
-          prev.isReady ? prev : { ...prev, isReady: true },
-        )
-        console.warn(
-          "Wand Engine: AI initialization timed out. Forcing UI active.",
-        )
-      }
-    }, 6000)
-
     // Initialize MediaPipe Hands
     const hands = new HandsUtils.Hands({
       locateFile: (file) => {
@@ -97,7 +85,7 @@ export function useHandTracking(
         if (!isMounted || !videoRef.current || !handsRef.current) return
         try {
           await handsRef.current.send({ image: videoRef.current })
-        } catch (e) {
+        } catch {
           // Silently catch frame skips while the AI boots up
         }
       },
@@ -111,7 +99,6 @@ export function useHandTracking(
     // ─── CLEANUP (Kills the engine cleanly on Fast Refresh) ───
     return () => {
       isMounted = false
-      clearTimeout(safetyTimer) // 👈 No more "Cannot find name" error!
       if (cameraRef.current) {
         cameraRef.current.stop()
       }

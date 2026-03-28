@@ -17,9 +17,9 @@
   --color-border-dim: rgba(201, 137, 10, 0.18);
   --color-border-b: rgba(201, 137, 10, 0.4);
 
-  --font-cinzel: var(--font-cinzel);
-  --font-crimson: var(--font-crimson);
-  --font-fira: var(--font-fira);
+  --font-cinzel: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-crimson: "Crimson Text", Georgia, "Times New Roman", serif;
+  --font-fira: "Fira Code", "Cascadia Code", Consolas, monospace;
 }
 
 @layer base {
