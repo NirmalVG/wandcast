@@ -63,6 +63,21 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
       }
     }, [])
 
+    useEffect(() => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      // Apply device pixel ratio for crisp rendering on high-DPI displays
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+      canvas.width = width * dpr
+      canvas.height = height * dpr
+
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        ctx.scale(dpr, dpr)
+      }
+    }, [width, height])
+
     // Expose draw() to parent via ref — called directly from rAF loop
     useImperativeHandle(ref, () => ({
       draw(trackingResult: HandTrackingResult, trail: TrailPoint[]) {
@@ -179,8 +194,16 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
 
         // ── SKELETON ──────────────────────────────────────────────────────
         if (safeTracking && safeLandmarks.length > 0) {
+          const isMobile = /Android|iPhone|iPad|webOS/i.test(
+            typeof navigator !== "undefined" ? navigator.userAgent : "",
+          )
+          const lineWidth = isMobile ? 7 : 4
+          const jointRadius = isMobile ? 7 : 4.5
+
           ctx.strokeStyle = "rgba(100, 200, 255, 0.45)"
-          ctx.lineWidth = 1.5
+          ctx.lineWidth = lineWidth
+          ctx.lineCap = "round"
+          ctx.lineJoin = "round"
 
           for (const [a, b] of HAND_CONNECTIONS) {
             const lmA = safeLandmarks[a]
@@ -195,7 +218,7 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
           for (const lm of safeLandmarks) {
             if (!lm) continue
             ctx.beginPath()
-            ctx.arc(lm.x * width, lm.y * height, 3, 0, Math.PI * 2)
+            ctx.arc(lm.x * width, lm.y * height, jointRadius, 0, Math.PI * 2)
             ctx.fillStyle = "rgba(100, 200, 255, 0.65)"
             ctx.fill()
           }

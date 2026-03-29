@@ -23,9 +23,20 @@
 }
 
 @layer base {
+  html,
   body {
-    @apply bg-bg-dark text-ink font-crimson overflow-x-hidden;
+    height: 100vh;
+    width: 100vw;
+    max-height: 100vh;
+    max-width: 100vw;
+    font-size: 16px;
+  }
+
+  body {
+    @apply bg-bg-dark text-ink font-crimson overflow-hidden;
     cursor: none;
+    -webkit-text-size-adjust: 100%;
+    -webkit-touch-callout: none;
   }
 
   body::before {

@@ -47,28 +47,28 @@ export default function CameraView() {
   const lastCastTimeRef = useRef(0)
   const lastVoiceCastRef = useRef<SpellName | null>(null)
 
-  const castSpell = useCallback((
-    spell: SpellName,
-    confidence: number,
-    tip?: WandPoint | null,
-  ) => {
-    const now = Date.now()
-    const currentTip = tip ?? trackingSnapshotRef.current.wandTip ?? {
-      x: 0.5,
-      y: 0.5,
-      z: 0,
-    }
+  const castSpell = useCallback(
+    (spell: SpellName, confidence: number, tip?: WandPoint | null) => {
+      const now = Date.now()
+      const currentTip = tip ??
+        trackingSnapshotRef.current.wandTip ?? {
+          x: 0.5,
+          y: 0.5,
+          z: 0,
+        }
 
-    lastCastTimeRef.current = now
-    setLastSpell({
-      spell,
-      confidence,
-      castAt: now,
-    })
-    triggerEffect(spell, currentTip)
-    setFlash(true)
-    window.setTimeout(() => setFlash(false), FLASH_DURATION_MS)
-  }, [triggerEffect])
+      lastCastTimeRef.current = now
+      setLastSpell({
+        spell,
+        confidence,
+        castAt: now,
+      })
+      triggerEffect(spell, currentTip)
+      setFlash(true)
+      window.setTimeout(() => setFlash(false), FLASH_DURATION_MS)
+    },
+    [triggerEffect],
+  )
 
   useEffect(() => {
     if (trackingResult.isTracking && trackingResult.wandTip) {
@@ -117,11 +117,17 @@ export default function CameraView() {
   }, [castSpell, detectedSpell, trackingResult.wandTip])
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
     const updateViewport = () => {
-      const { width, height } = container.getBoundingClientRect()
+      // Use window dimensions directly to avoid browser scaling issues
+      const width = Math.max(
+        window.innerWidth,
+        document.documentElement.clientWidth
+      )
+      const height = Math.max(
+        window.innerHeight,
+        document.documentElement.clientHeight
+      )
+
       if (width > 0 && height > 0) {
         setViewportSize({
           width: Math.round(width),
@@ -132,18 +138,14 @@ export default function CameraView() {
 
     updateViewport()
 
-    const observer = new ResizeObserver(() => {
-      updateViewport()
-    })
-
-    observer.observe(container)
     window.addEventListener("orientationchange", updateViewport)
     window.addEventListener("resize", updateViewport)
+    document.addEventListener("fullscreenchange", updateViewport)
 
     return () => {
-      observer.disconnect()
       window.removeEventListener("orientationchange", updateViewport)
       window.removeEventListener("resize", updateViewport)
+      document.removeEventListener("fullscreenchange", updateViewport)
     }
   }, [])
 
@@ -243,15 +245,32 @@ export default function CameraView() {
         </div>
 
         {trackingResult.wandTip && (
-          <div className="w-max rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-yellow-300/70 backdrop-blur-sm">
-            x: {trackingResult.wandTip.x.toFixed(3)} · y:{" "}
-            {trackingResult.wandTip.y.toFixed(3)}
+          <div className="flex flex-col gap-1 rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-yellow-300/70 backdrop-blur-sm">
+            <div>
+              x: {trackingResult.wandTip.x.toFixed(3)} · y:{" "}
+              {trackingResult.wandTip.y.toFixed(3)}
+            </div>
+            {trackingResult.allLandmarks.length >= 21 && (
+              <div>
+                hand width:{" "}
+                {(
+                  Math.hypot(
+                    (trackingResult.allLandmarks[20]?.x ?? 0) -
+                      (trackingResult.allLandmarks[0]?.x ?? 0),
+                    (trackingResult.allLandmarks[20]?.y ?? 0) -
+                      (trackingResult.allLandmarks[0]?.y ?? 0),
+                  ) * 100
+                ).toFixed(1)}
+                %
+              </div>
+            )}
           </div>
         )}
 
         {lastSpell.spell && (
           <div className="mt-2 w-max animate-pulse rounded-sm bg-gold-b px-4 py-3 font-cinzel text-lg font-bold text-black shadow-[0_0_20px_rgba(240,180,41,0.6)]">
-            {lastSpell.spell.toUpperCase()} ({(lastSpell.confidence * 100).toFixed(0)}%)
+            {lastSpell.spell.toUpperCase()} (
+            {(lastSpell.confidence * 100).toFixed(0)}%)
           </div>
         )}
       </div>
