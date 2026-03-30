@@ -8,7 +8,6 @@ import { useIncantation } from "@/hooks/useIncantation"
 import { useSpellEffects } from "@/hooks/useSpellEffects"
 import { useSpellRecognition } from "@/hooks/useSpellRecognition"
 import { useWandTrail } from "@/hooks/useWandTrail"
-import { CAMERA_CONFIG } from "@/lib/mediapipe/config"
 import type { SpellMatch, SpellName, WandPoint } from "@/types"
 import HandOverlay from "./HandOverlay"
 import type { HandOverlayHandle } from "./HandOverlay"
@@ -22,9 +21,10 @@ export default function CameraView() {
     width: number
     height: number
   }>({
-    width: CAMERA_CONFIG.width,
-    height: CAMERA_CONFIG.height,
+    width: typeof window !== "undefined" ? window.innerWidth : 1280,
+    height: typeof window !== "undefined" ? window.innerHeight : 720,
   })
+  const [cameraRes, setCameraRes] = useState({ width: 1280, height: 720 })
   const [lastSpell, setLastSpell] = useState<SpellMatch>({
     spell: null,
     confidence: 0,
@@ -116,36 +116,52 @@ export default function CameraView() {
     }
   }, [castSpell, detectedSpell, trackingResult.wandTip])
 
+  // Detect camera resolution from the actual video stream
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleMeta = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setCameraRes({ width: video.videoWidth, height: video.videoHeight })
+      }
+    }
+
+    video.addEventListener("loadedmetadata", handleMeta)
+    // Also check if already loaded
+    if (video.videoWidth > 0) handleMeta()
+
+    return () => video.removeEventListener("loadedmetadata", handleMeta)
+  }, [videoRef])
+
   useEffect(() => {
     const updateViewport = () => {
-      // Use window dimensions directly to avoid browser scaling issues
-      const width = Math.max(
-        window.innerWidth,
-        document.documentElement.clientWidth
-      )
-      const height = Math.max(
-        window.innerHeight,
-        document.documentElement.clientHeight
-      )
+      // Use visualViewport if available — it excludes pinch-zoom scale
+      const vv = window.visualViewport
+      const width = vv ? Math.round(vv.width) : window.innerWidth
+      const height = vv ? Math.round(vv.height) : window.innerHeight
 
       if (width > 0 && height > 0) {
-        setViewportSize({
-          width: Math.round(width),
-          height: Math.round(height),
-        })
+        setViewportSize({ width, height })
       }
     }
 
     updateViewport()
 
+    // Listen on visualViewport resize (handles zoom changes)
+    const vv = window.visualViewport
+    if (vv) {
+      vv.addEventListener("resize", updateViewport)
+    }
     window.addEventListener("orientationchange", updateViewport)
     window.addEventListener("resize", updateViewport)
-    document.addEventListener("fullscreenchange", updateViewport)
 
     return () => {
+      if (vv) {
+        vv.removeEventListener("resize", updateViewport)
+      }
       window.removeEventListener("orientationchange", updateViewport)
       window.removeEventListener("resize", updateViewport)
-      document.removeEventListener("fullscreenchange", updateViewport)
     }
   }, [])
 
@@ -191,6 +207,7 @@ export default function CameraView() {
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden bg-black"
+      style={{ touchAction: "none" }}
     >
       <video
         ref={videoRef}
@@ -221,6 +238,8 @@ export default function CameraView() {
           ref={overlayRef}
           width={viewportSize.width}
           height={viewportSize.height}
+          cameraWidth={cameraRes.width}
+          cameraHeight={cameraRes.height}
         />
       </div>
 

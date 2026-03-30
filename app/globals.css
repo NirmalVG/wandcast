@@ -37,6 +37,8 @@
     cursor: none;
     -webkit-text-size-adjust: 100%;
     -webkit-touch-callout: none;
+    touch-action: manipulation;
+    -ms-touch-action: manipulation;
   }
 
   body::before {

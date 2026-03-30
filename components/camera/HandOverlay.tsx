@@ -13,6 +13,8 @@ export type HandOverlayHandle = {
 type Props = {
   width: number
   height: number
+  cameraWidth: number
+  cameraHeight: number
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -49,9 +51,56 @@ const SHIMMER_POOL = Array.from({ length: 20 }, () => ({
   radius: 0,
 }))
 
+// ── Object-cover math ─────────────────────────────────────────────────────────
+// Computes the same scale + offset the browser applies to <video style="object-fit:cover">
+// so the canvas skeleton aligns pixel-perfect with the visible video feed.
+function computeCoverTransform(
+  viewW: number,
+  viewH: number,
+  camW: number,
+  camH: number,
+) {
+  const viewAspect = viewW / viewH
+  const camAspect = camW / camH
+
+  let scale: number
+  let offsetX: number
+  let offsetY: number
+
+  if (viewAspect > camAspect) {
+    // Viewport is wider than camera — camera height is cropped
+    scale = viewW / camW
+    offsetX = 0
+    offsetY = (viewH - camH * scale) / 2
+  } else {
+    // Viewport is taller than camera — camera width is cropped
+    scale = viewH / camH
+    offsetX = (viewW - camW * scale) / 2
+    offsetY = 0
+  }
+
+  return { scale, offsetX, offsetY }
+}
+
+// Convert a normalized landmark (0–1) to pixel position matching object-cover
+function landmarkToPixel(
+  nx: number,
+  ny: number,
+  camW: number,
+  camH: number,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+) {
+  return {
+    px: nx * camW * scale + offsetX,
+    py: ny * camH * scale + offsetY,
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 const HandOverlay = forwardRef<HandOverlayHandle, Props>(
-  ({ width, height }, ref) => {
+  ({ width, height, cameraWidth, cameraHeight }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
 
     // Seed shimmer pool once — no Math.random() in the hot draw loop
@@ -89,6 +138,18 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
         // Always clear first
         ctx.clearRect(0, 0, width, height)
 
+        // Compute object-cover transform to match video scaling
+        const { scale, offsetX, offsetY } = computeCoverTransform(
+          width,
+          height,
+          cameraWidth,
+          cameraHeight,
+        )
+
+        // Helper: convert normalized coords to pixel coords
+        const toPixel = (nx: number, ny: number) =>
+          landmarkToPixel(nx, ny, cameraWidth, cameraHeight, scale, offsetX, offsetY)
+
         const safeTrail = Array.isArray(trail) ? trail : []
         const safeLandmarks = trackingResult?.allLandmarks ?? []
         const safeWandTip = trackingResult?.wandTip ?? null
@@ -96,30 +157,30 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
 
         // ── TRAIL ─────────────────────────────────────────────────────────
         if (safeTrail.length > 2) {
-          const first = safeTrail[0]
-          const last = safeTrail[safeTrail.length - 1]
+          const firstPx = toPixel(safeTrail[0].x, safeTrail[0].y)
+          const lastPx = toPixel(
+            safeTrail[safeTrail.length - 1].x,
+            safeTrail[safeTrail.length - 1].y,
+          )
 
           // Main smooth bezier trail
           ctx.beginPath()
-          ctx.moveTo(first.x * width, first.y * height)
+          ctx.moveTo(firstPx.px, firstPx.py)
 
           for (let i = 1; i < safeTrail.length - 1; i++) {
-            const midX = ((safeTrail[i].x + safeTrail[i + 1].x) / 2) * width
-            const midY = ((safeTrail[i].y + safeTrail[i + 1].y) / 2) * height
-            ctx.quadraticCurveTo(
-              safeTrail[i].x * width,
-              safeTrail[i].y * height,
-              midX,
-              midY,
-            )
+            const curr = toPixel(safeTrail[i].x, safeTrail[i].y)
+            const next = toPixel(safeTrail[i + 1].x, safeTrail[i + 1].y)
+            const midX = (curr.px + next.px) / 2
+            const midY = (curr.py + next.py) / 2
+            ctx.quadraticCurveTo(curr.px, curr.py, midX, midY)
           }
-          ctx.lineTo(last.x * width, last.y * height)
+          ctx.lineTo(lastPx.px, lastPx.py)
 
           const grad = ctx.createLinearGradient(
-            first.x * width,
-            first.y * height,
-            last.x * width,
-            last.y * height,
+            firstPx.px,
+            firstPx.py,
+            lastPx.px,
+            lastPx.py,
           )
           grad.addColorStop(0, "rgba(120, 60, 255, 0.0)")
           grad.addColorStop(0.4, "rgba(160, 80, 255, 0.4)")
@@ -140,21 +201,22 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
             ctx.filter = "blur(5px)"
             ctx.globalAlpha = 0.55
             ctx.beginPath()
-            ctx.moveTo(glowTrail[0].x * width, glowTrail[0].y * height)
+            const gFirst = toPixel(glowTrail[0].x, glowTrail[0].y)
+            ctx.moveTo(gFirst.px, gFirst.py)
 
             for (let i = 1; i < glowTrail.length - 1; i++) {
-              const midX = ((glowTrail[i].x + glowTrail[i + 1].x) / 2) * width
-              const midY = ((glowTrail[i].y + glowTrail[i + 1].y) / 2) * height
-              ctx.quadraticCurveTo(
-                glowTrail[i].x * width,
-                glowTrail[i].y * height,
-                midX,
-                midY,
-              )
+              const curr = toPixel(glowTrail[i].x, glowTrail[i].y)
+              const next = toPixel(glowTrail[i + 1].x, glowTrail[i + 1].y)
+              const midX = (curr.px + next.px) / 2
+              const midY = (curr.py + next.py) / 2
+              ctx.quadraticCurveTo(curr.px, curr.py, midX, midY)
             }
 
-            const glowLast = glowTrail[glowTrail.length - 1]
-            ctx.lineTo(glowLast.x * width, glowLast.y * height)
+            const gLast = toPixel(
+              glowTrail[glowTrail.length - 1].x,
+              glowTrail[glowTrail.length - 1].y,
+            )
+            ctx.lineTo(gLast.px, gLast.py)
             ctx.strokeStyle = "rgba(255, 200, 50, 0.9)"
             ctx.lineWidth = 14
             ctx.lineCap = "round"
@@ -177,11 +239,12 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
             if (!point) continue
             const p = SHIMMER_POOL[poolIdx++]
             const progress = i / safeTrail.length
+            const ptPx = toPixel(point.x, point.y)
 
             ctx.beginPath()
             ctx.arc(
-              point.x * width + p.offsetX,
-              point.y * height + p.offsetY,
+              ptPx.px + p.offsetX,
+              ptPx.py + p.offsetY,
               p.radius,
               0,
               Math.PI * 2,
@@ -194,11 +257,22 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
 
         // ── SKELETON ──────────────────────────────────────────────────────
         if (safeTracking && safeLandmarks.length > 0) {
-          const isMobile = /Android|iPhone|iPad|webOS/i.test(
-            typeof navigator !== "undefined" ? navigator.userAgent : "",
-          )
-          const lineWidth = isMobile ? 7 : 4
-          const jointRadius = isMobile ? 7 : 4.5
+          // Compute hand bounding box in screen pixels to scale line width
+          let minPx = Infinity, maxPx = -Infinity
+          let minPy = Infinity, maxPy = -Infinity
+          for (const lm of safeLandmarks) {
+            if (!lm) continue
+            const { px, py } = toPixel(lm.x, lm.y)
+            if (px < minPx) minPx = px
+            if (px > maxPx) maxPx = px
+            if (py < minPy) minPy = py
+            if (py > maxPy) maxPy = py
+          }
+          const handScreenSize = Math.max(maxPx - minPx, maxPy - minPy, 1)
+
+          // Scale line width proportionally — ~3% of hand size, clamped for usability
+          const lineWidth = Math.max(2, Math.min(12, handScreenSize * 0.03))
+          const jointRadius = Math.max(2.5, Math.min(10, handScreenSize * 0.025))
 
           ctx.strokeStyle = "rgba(100, 200, 255, 0.45)"
           ctx.lineWidth = lineWidth
@@ -209,16 +283,19 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
             const lmA = safeLandmarks[a]
             const lmB = safeLandmarks[b]
             if (!lmA || !lmB) continue
+            const pA = toPixel(lmA.x, lmA.y)
+            const pB = toPixel(lmB.x, lmB.y)
             ctx.beginPath()
-            ctx.moveTo(lmA.x * width, lmA.y * height)
-            ctx.lineTo(lmB.x * width, lmB.y * height)
+            ctx.moveTo(pA.px, pA.py)
+            ctx.lineTo(pB.px, pB.py)
             ctx.stroke()
           }
 
           for (const lm of safeLandmarks) {
             if (!lm) continue
+            const { px, py } = toPixel(lm.x, lm.y)
             ctx.beginPath()
-            ctx.arc(lm.x * width, lm.y * height, jointRadius, 0, Math.PI * 2)
+            ctx.arc(px, py, jointRadius, 0, Math.PI * 2)
             ctx.fillStyle = "rgba(100, 200, 255, 0.65)"
             ctx.fill()
           }
@@ -226,8 +303,7 @@ const HandOverlay = forwardRef<HandOverlayHandle, Props>(
 
         // ── WAND TIP ──────────────────────────────────────────────────────
         if (safeWandTip) {
-          const cx = safeWandTip.x * width
-          const cy = safeWandTip.y * height
+          const { px: cx, py: cy } = toPixel(safeWandTip.x, safeWandTip.y)
 
           // Outer glow
           const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 26)
